@@ -1,0 +1,36 @@
+{
+  "name": "zarlino-songwriting-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Cloudflare-native beat-to-songwriting platform (AI Songwriting Studio).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:web": "npm --prefix web run dev",
+    "build:web": "npm --prefix web run build",
+    "deploy": "npm run build:web && wrangler deploy",
+    "deploy:containers": "npm run build:web && wrangler deploy --config wrangler.containers.toml",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:local": "wrangler d1 execute songwriting-studio --local --file=./db/schema.sql",
+    "db:remote": "wrangler d1 execute songwriting-studio --remote --file=./db/schema.sql",
+    "db:query:local": "wrangler d1 execute songwriting-studio --local --command",
+    "db:query:remote": "wrangler d1 execute songwriting-studio --remote --command",
+    "secrets:check": "wrangler secret list",
+    "tail": "wrangler tail",
+    "analysis:setup": "powershell -ExecutionPolicy Bypass -File ./tools/setup-analysis.ps1",
+    "analysis:serve": "powershell -ExecutionPolicy Bypass -File ./tools/serve-analysis.ps1",
+    "analysis:worker": "powershell -ExecutionPolicy Bypass -File ./tools/analysis-worker.ps1",
+    "analysis:test": "powershell -ExecutionPolicy Bypass -File ./tools/test-analysis.ps1"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260924.1",
+    "@types/node": "^24.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1",
+    "wrangler": "^4.137.0"
+  }
+}

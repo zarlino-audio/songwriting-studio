@@ -1,0 +1,12 @@
+# Local development requirements.
+#
+# PyAV (the container's decoder) has no wheel for every Python/OS combination —
+# Windows + Python 3.11 builds from source and needs FFmpeg headers. So local dev
+# decodes with the FFmpeg CLI instead, via a wheel that bundles the binary:
+#   npm run analysis:setup
+#
+# The container uses analysis/requirements.txt (which includes PyAV).
+numpy>=1.26,<3
+scipy>=1.11,<2
+imageio-ffmpeg>=0.5
+pytest>=8,<9

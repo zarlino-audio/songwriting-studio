@@ -1,0 +1,95 @@
+# Zarlino Songwriting Studio — Worker / API / Durable Objects / Queues
+#
+# Deploy:  npm run deploy            (this config; analysis service reached over HTTP)
+#          npm run deploy:containers (wrangler.containers.toml; adds the analysis Container)
+#
+# Resources on the Zarlino Cloudflare account (ae604b602fdbcb1b48b41e975c6dbd19):
+#   D1   songwriting-studio      0ec6c770-7b9d-4ecb-808a-f4e410e5d842
+#   KV   SONGWRITING_KV          a7131623431446d1acf3ab4da4749b04
+#   R2   songwriting-beats       (requires R2 to be enabled on the account)
+#   Queue songwriting-analysis   (+ songwriting-analysis-dlq)
+
+name = "zarlino-songwriting-studio"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+account_id = "ae604b602fdbcb1b48b41e975c6dbd19"
+
+# ---------------------------------------------------------------------------
+# Static frontend (built React app). API paths go to the Worker first.
+# ---------------------------------------------------------------------------
+[assets]
+directory = "./web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Bindings
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "songwriting-studio"
+database_id = "0ec6c770-7b9d-4ecb-808a-f4e410e5d842"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "a7131623431446d1acf3ab4da4749b04"
+
+[[r2_buckets]]
+binding = "BEATS"
+bucket_name = "songwriting-beats"
+
+[[queues.producers]]
+binding = "ANALYSIS_QUEUE"
+queue = "songwriting-analysis"
+
+[[queues.consumers]]
+queue = "songwriting-analysis"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "songwriting-analysis-dlq"
+
+[[durable_objects.bindings]]
+name = "SONG_SESSION"
+class_name = "SongSessionDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SongSessionDO"]
+
+# ---------------------------------------------------------------------------
+# Vars (non-secret). Secrets live in .dev.vars locally / `wrangler secret put`
+# in production: DEEPSEEK_API_KEY, AI_GATEWAY_TOKEN, R2_ACCESS_KEY_ID,
+# R2_SECRET_ACCESS_KEY, SESSION_PEPPER, ANALYSIS_SHARED_SECRET
+# ---------------------------------------------------------------------------
+[vars]
+ENVIRONMENT = "production"
+CF_ACCOUNT_ID = "ae604b602fdbcb1b48b41e975c6dbd19"
+R2_BUCKET = "songwriting-beats"
+R2_S3_ENDPOINT = "https://ae604b602fdbcb1b48b41e975c6dbd19.r2.cloudflarestorage.com"
+
+# AI Gateway (centralised routing/logging). Unset AI_GATEWAY_ENABLED to call the
+# provider directly with DEEPSEEK_API_KEY.
+AI_GATEWAY_ENABLED = "true"
+AI_GATEWAY_ID = "songwriting-studio"
+AI_PROVIDER = "deepseek"
+AI_MODEL_FAST = "deepseek-chat"
+AI_MODEL_CREATIVE = "deepseek-chat"
+AI_MODEL_REASONING = "deepseek-reasoner"
+
+# Audio analysis runtime: "http" (service URL below) or "container" (see
+# wrangler.containers.toml) or "stub" (deterministic placeholder profile).
+ANALYSIS_MODE = "http"
+ANALYSIS_URL = "http://127.0.0.1:8788"
+
+# How analysis jobs reach the runtime:
+#   queue - the Queue consumer calls the runtime (use with the container)
+#   poll  - jobs wait in D1 for the local analysis worker (npm run analysis:worker)
+ANALYSIS_DISPATCH = "poll"
+
+UPLOAD_MAX_BYTES = "524288000"
+ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"

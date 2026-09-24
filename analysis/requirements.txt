@@ -1,0 +1,5 @@
+# Container requirements (linux/amd64, where PyAV wheels exist).
+# PyAV bundles FFmpeg's demuxers/decoders, so no system FFmpeg install is needed.
+numpy>=1.26,<3
+scipy>=1.11,<2
+av>=12,<15

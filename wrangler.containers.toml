@@ -1,0 +1,96 @@
+# Zarlino Songwriting Studio — Container build (audio analysis runtime)
+#
+# Use this config when you want the analysis service running AS a Cloudflare
+# Container instead of on a separate machine:
+#
+#     npm run deploy:containers      # == wrangler deploy --config wrangler.containers.toml
+#
+# REQUIREMENTS
+#   1. Docker running locally (wrangler builds + pushes the image with Docker).
+#   2. Workers Paid plan (Containers are a paid feature).
+#
+# Everything else is identical to wrangler.toml — keep the two files in sync
+# when you add bindings. The only deltas are the AnalysisService container,
+# its Durable Object binding/migration, and ANALYSIS_MODE = "container".
+
+name = "zarlino-songwriting-studio"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+account_id = "ae604b602fdbcb1b48b41e975c6dbd19"
+
+[assets]
+directory = "./web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "songwriting-studio"
+database_id = "0ec6c770-7b9d-4ecb-808a-f4e410e5d842"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "a7131623431446d1acf3ab4da4749b04"
+
+[[r2_buckets]]
+binding = "BEATS"
+bucket_name = "songwriting-beats"
+
+[[queues.producers]]
+binding = "ANALYSIS_QUEUE"
+queue = "songwriting-analysis"
+
+[[queues.consumers]]
+queue = "songwriting-analysis"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "songwriting-analysis-dlq"
+
+[[durable_objects.bindings]]
+name = "SONG_SESSION"
+class_name = "SongSessionDO"
+
+# The analysis runtime. `standard-1` = 1/2 vCPU, 4 GiB RAM, 8 GB disk — enough
+# for numpy/scipy analysis of a full-length track with the image below.
+[[containers]]
+class_name = "AnalysisService"
+image = "./analysis"
+max_instances = 2
+instance_type = "standard-1"
+name = "zarlino-songwriting-analysis"
+
+[[durable_objects.bindings]]
+name = "ANALYSIS"
+class_name = "AnalysisService"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SongSessionDO"]
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["AnalysisService"]
+
+[vars]
+ENVIRONMENT = "production"
+CF_ACCOUNT_ID = "ae604b602fdbcb1b48b41e975c6dbd19"
+R2_BUCKET = "songwriting-beats"
+R2_S3_ENDPOINT = "https://ae604b602fdbcb1b48b41e975c6dbd19.r2.cloudflarestorage.com"
+
+AI_GATEWAY_ENABLED = "true"
+AI_GATEWAY_ID = "songwriting-studio"
+AI_PROVIDER = "deepseek"
+AI_MODEL_FAST = "deepseek-chat"
+AI_MODEL_CREATIVE = "deepseek-chat"
+AI_MODEL_REASONING = "deepseek-reasoner"
+
+ANALYSIS_MODE = "container"
+ANALYSIS_URL = ""
+ANALYSIS_DISPATCH = "queue"
+
+UPLOAD_MAX_BYTES = "524288000"
+ALLOWED_ORIGINS = "https://zarlino-songwriting-studio.zarlino001.workers.dev"

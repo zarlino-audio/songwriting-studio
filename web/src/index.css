@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(1200px 600px at 20% -10%, #1a1636 0%, #0b0d12 55%, #0b0d12 100%);
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-studio-700 bg-studio-900/70 p-4 shadow-lg shadow-black/20 backdrop-blur;
+  }
+  .card-tight {
+    @apply rounded-lg border border-studio-700 bg-studio-850/80 p-3;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-studio-600 bg-studio-800 px-3 py-2 text-sm font-medium text-studio-100 transition hover:border-accent/60 hover:bg-studio-700 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn border-transparent bg-accent text-white hover:bg-accent-soft hover:text-studio-950;
+  }
+  .btn-ghost {
+    @apply btn border-transparent bg-transparent text-studio-200 hover:bg-studio-800;
+  }
+  .btn-xs {
+    @apply rounded-md px-2 py-1 text-xs;
+  }
+  .input {
+    @apply w-full rounded-lg border border-studio-700 bg-studio-950/60 px-3 py-2 text-sm text-studio-100 placeholder:text-studio-400 focus:border-accent focus:outline-none;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-studio-400;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full border border-studio-600 bg-studio-800/80 px-2 py-0.5 text-xs text-studio-200;
+  }
+  .chip-active {
+    @apply chip border-accent bg-accent/20 text-accent-soft;
+  }
+  .pill-ok {
+    @apply rounded-full bg-accent-mint/15 px-2 py-0.5 text-xs text-accent-mint;
+  }
+  .pill-watch {
+    @apply rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-300;
+  }
+  .pill-weak {
+    @apply rounded-full bg-rose-500/15 px-2 py-0.5 text-xs text-rose-300;
+  }
+  .stat {
+    @apply text-2xl font-semibold text-studio-100;
+  }
+  .stat-label {
+    @apply text-xs uppercase tracking-wide text-studio-400;
+  }
+  .section-kind {
+    @apply rounded-md bg-studio-800 px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-studio-200;
+  }
+}
+
+.lyric-line {
+  font-variant-ligatures: none;
+}
+
+.rhyme-0 { text-decoration: underline; text-decoration-color: #7c5cff; }
+.rhyme-1 { text-decoration: underline; text-decoration-color: #4fd1a5; }
+.rhyme-2 { text-decoration: underline; text-decoration-color: #ff8f5c; }
+.rhyme-3 { text-decoration: underline; text-decoration-color: #f472b6; }
+.rhyme-4 { text-decoration: underline; text-decoration-color: #60a5fa; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #11141c; }
+::-webkit-scrollbar-thumb { background: #2a3147; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #39415a; }

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+web/dist/
+.wrangler/
+.dev.vars
+*.log
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+coverage/
+*.tsbuildinfo
+analysis/.venv/
+analysis/artifacts/
