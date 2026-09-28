@@ -136,9 +136,24 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     log.info("polling %s for analysis jobs", args.url)
+
+    # A workstation loses its network now and then (sleep, Wi-Fi roam, VPN drop).
+    # The runtime must not die because of it: back off and keep polling.
+    failures = 0
     try:
         while True:
-            worked = process(args.url, args.token)
+            try:
+                worked = process(args.url, args.token)
+            except KeyboardInterrupt:
+                raise
+            except Exception as error:
+                failures += 1
+                delay = min(args.interval * (2 ** min(failures, 5)), 60.0)
+                log.warning("poll failed (%d in a row): %s - retrying in %.0fs", failures, error, delay)
+                time.sleep(delay)
+                continue
+
+            failures = 0
             if args.once:
                 return 0 if worked else 1
             if not worked:
@@ -149,4 +164,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
