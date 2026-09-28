@@ -14,7 +14,9 @@
 # its Durable Object binding/migration, and ANALYSIS_MODE = "container".
 
 name = "zarlino-songwriting-studio"
-main = "src/index.ts"
+# src/container-entry.ts re-exports everything from src/index.ts *and* the
+# AnalysisService container class — wrangler requires the exported class here.
+main = "src/container-entry.ts"
 compatibility_date = "2026-09-01"
 account_id = "ae604b602fdbcb1b48b41e975c6dbd19"
 
@@ -57,9 +59,12 @@ class_name = "SongSessionDO"
 
 # The analysis runtime. `standard-1` = 1/2 vCPU, 4 GiB RAM, 8 GB disk — enough
 # for numpy/scipy analysis of a full-length track with the image below.
+# `image` must point at the Dockerfile itself: given a directory wrangler refuses
+# to deploy. Docker must be running locally for this config (wrangler builds and
+# pushes the image), or let Workers Builds run the same command on push.
 [[containers]]
 class_name = "AnalysisService"
-image = "./analysis"
+image = "./analysis/Dockerfile"
 max_instances = 2
 instance_type = "standard-1"
 name = "zarlino-songwriting-analysis"

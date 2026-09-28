@@ -35,6 +35,12 @@ How the studio is put together, and why.
 The analysis runtime is deliberately pluggable: the same Python engine runs in all three
 placements, and the Worker never does heavy DSP itself.
 
+Placement A needs Docker running wherever you deploy from, because `wrangler deploy` builds and
+pushes the image; `image` must point at `analysis/Dockerfile` (not the directory) and `main` must be
+`src/container-entry.ts`, which is the only entrypoint that exports the `AnalysisService` Durable
+Object. Without Docker, either let Workers Builds run the same deploy on push to the production
+branch, or keep using placement B/C — deployment A is not required for the app to work.
+
 ## 2. Beat pipeline
 
 ```

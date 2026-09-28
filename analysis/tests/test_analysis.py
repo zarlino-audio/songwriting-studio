@@ -13,7 +13,9 @@ from __future__ import annotations
 import numpy as np
 
 from app.analysis.features import (
+    FAST_HOP,
     analyse,
+    beat_grid,
     chromagram,
     detect_chords,
     estimate_key,
@@ -117,9 +119,8 @@ def test_beat_grid_is_regular() -> None:
     magnitude, _freqs = stft_magnitude(signal)
     onset = onset_envelope(magnitude)
     _bpm, _confidence, period = estimate_tempo(onset)
-    from app.analysis.features import HOP, beat_grid
 
-    beats = beat_grid(onset, period * SR / HOP)
+    beats = beat_grid(onset, period, sr=SR, hop=FAST_HOP)
     assert beats.size > 20
     intervals = np.diff(beats)
     assert float(np.std(intervals)) < 0.03 * float(np.mean(intervals)) + 0.01
