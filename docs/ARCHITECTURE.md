@@ -35,11 +35,15 @@ How the studio is put together, and why.
 The analysis runtime is deliberately pluggable: the same Python engine runs in all three
 placements, and the Worker never does heavy DSP itself.
 
-Placement A needs Docker running wherever you deploy from, because `wrangler deploy` builds and
-pushes the image; `image` must point at `analysis/Dockerfile` (not the directory) and `main` must be
-`src/container-entry.ts`, which is the only entrypoint that exports the `AnalysisService` Durable
-Object. Without Docker, either let Workers Builds run the same deploy on push to the production
-branch, or keep using placement B/C — deployment A is not required for the app to work.
+Placement A is the live one. Its image is published to the Cloudflare registry by
+`tools/publish-image.ps1`, which assembles it in Python (base layers from Docker Hub + one layer with
+the wheels and app source) and pushes it over HTTPS — so no machine needs a working Docker engine.
+With `image` set to that registry reference, `wrangler deploy` needs no Docker either. Two fields are
+easy to get wrong: `main` must be `src/container-entry.ts` (the only entrypoint exporting the
+`AnalysisService` Durable Object *and* re-exporting the default `fetch`/`queue` handlers —
+`export *` alone drops the default export and wrangler rejects the deploy with "Queue handler is
+missing"), and a Dockerfile-path `image` requires Docker at deploy time whereas a registry reference
+does not.
 
 ## 2. Beat pipeline
 

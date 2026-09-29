@@ -7,7 +7,7 @@ The same engine runs in three places:
 
 | Placement | How | When to use |
 | --- | --- | --- |
-| Cloudflare Container | `npm run deploy:containers` (needs Docker) | the target deployment |
+| Cloudflare Container | `tools/publish-image.ps1 -Tag <v>` then `npm run deploy:containers` | the live deployment (no Docker needed) |
 | HTTP service | `npm run analysis:serve` | a VM / the RDP box |
 | Polling worker | `npm run analysis:worker` | a workstation, no Docker required |
 

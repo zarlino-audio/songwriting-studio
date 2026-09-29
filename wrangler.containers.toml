@@ -59,12 +59,19 @@ class_name = "SongSessionDO"
 
 # The analysis runtime. `standard-1` = 1/2 vCPU, 4 GiB RAM, 8 GB disk — enough
 # for numpy/scipy analysis of a full-length track with the image below.
-# `image` must point at the Dockerfile itself: given a directory wrangler refuses
-# to deploy. Docker must be running locally for this config (wrangler builds and
-# pushes the image), or let Workers Builds run the same command on push.
+#
+# Two ways to supply the image:
+#   (a) a Dockerfile path ("./analysis/Dockerfile")  -> wrangler builds it locally,
+#       which requires a working Docker engine on the deploying machine;
+#   (b) a pre-built registry reference (current)     -> no Docker needed at deploy
+#       time. Publish it with `powershell -File ./tools/publish-image.ps1 -Tag 0.4.0`,
+#       which assembles the image in Python and pushes it over HTTPS.
+#
+# `main` must stay src/container-entry.ts: it is the only entrypoint that exports
+# the AnalysisService class wrangler looks for.
 [[containers]]
 class_name = "AnalysisService"
-image = "./analysis/Dockerfile"
+image = "registry.cloudflare.com/ae604b602fdbcb1b48b41e975c6dbd19/zarlino-songwriting-analysis:0.4.0"
 max_instances = 2
 instance_type = "standard-1"
 name = "zarlino-songwriting-analysis"

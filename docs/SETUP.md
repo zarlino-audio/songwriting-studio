@@ -85,36 +85,58 @@ powershell -ExecutionPolicy Bypass -File ./tools/smoke.ps1        # 24 end-to-en
 Invoke-RestMethod https://zarlino-songwriting-studio.zarlino001.workers.dev/api/health
 ```
 
-### 4B. Cloud-only (Workers Builds — the recommended setup)
+### 4B. Cloud-only (no workstation, no Docker) — the current setup
 
-One-time connection, then every push to `main` builds the image, deploys the Worker and rolls out
-container instances. No Docker, no secrets, no workstation involved.
+Everything needed to run the product lives in Cloudflare: the Worker serves the app and the API,
+the `AnalysisService` container runs the DSP, and Deploys are done either from any machine or by
+Workers Builds on push.
 
-1. **Workers & Pages → zarlino-songwriting-studio → Settings → Builds → Connect**
-2. Authorise GitHub and pick `zarlino-audio/songwriting-studio`, production branch `main`
-3. Set **Deploy command** to `npm run deploy:containers` (the default build command `npm ci` is
-   correct — `prebuild:web` installs `web/`'s dependencies)
-
-Then: `git push` → build → live. Watch it under **Deployments → View build history**; the container
-shows up under **Workers & Pages → Containers** with status, metrics and logs.
-
-Verify from anywhere (no workstation):
+**Publish the analysis image without Docker** (image is referenced from the Cloudflare registry, so
+deploys never need a Docker engine):
 
 ```powershell
-npx wrangler containers list                     # status per container application
-npx wrangler tail --config wrangler.containers.toml   # live container/Worker logs
-node tools/smoke.mjs --url https://zarlino-songwriting-studio.zarlino001.workers.dev --wait 120
+powershell -ExecutionPolicy Bypass -File ./tools/publish-image.ps1 -Tag 0.4.0
+# then set that reference in wrangler.containers.toml:
+# image = "registry.cloudflare.com/<account id>/zarlino-songwriting-analysis:0.4.0"
+npm run deploy:containers
 ```
 
-**What is cloud-only after this:**
+`tools/publish_container_image.py` does what wrangler does, in Python over HTTPS: pull
+`python:3.11-slim` (linux/amd64) from Docker Hub, unpack the `analysis/requirements.txt` wheels into
+site-packages plus the app source, mint short-lived registry credentials through the Cloudflare API,
+and push blobs + manifest to `registry.cloudflare.com`. Run it with `--dry-run` to build the layer
+and print the digests without pushing.
+
+**Optional: let Workers Builds deploy on push** (still no Docker, because the image is a registry
+reference rather than a Dockerfile path):
+
+1. **Workers & Pages → zarlino-songwriting-studio → Settings → Builds → Connect**
+2. Authorise GitHub, pick `zarlino-audio/songwriting-studio`, production branch `main`
+3. Set **Deploy command** to `npm run deploy:containers` (default build command `npm ci` is correct —
+   `prebuild:web` installs `web/`'s dependencies)
+
+Switching `image` back to `./analysis/Dockerfile` makes wrangler build the image itself, which needs
+Docker on whichever machine (or build environment) runs the deploy — Workers Builds can do that too,
+but nothing else here does.
+
+Verify from anywhere:
+
+```powershell
+npx wrangler containers list                            # status per container application
+npx wrangler containers images list                     # published tags
+npx wrangler tail --config wrangler.containers.toml     # live Worker/container logs
+node tools/smoke.mjs --url https://zarlino-songwriting-studio.zarlino001.workers.dev --wait 240
+```
+
+**What is cloud-only:**
 
 | Piece | Runs where | Why it is independent |
 | --- | --- | --- |
-| Web app + API | Worker (assets + routes) | deployed by Workers Builds |
-| Analysis DSP | `AnalysisService` container | image built in the CF build environment, `standard-1` instance |
-| Queue, DB, KV, R2 | D1 / KV / R2 / Queues | already serverless |
-| Image build | Cloudflare build environment | Docker runs there, not here |
-| Deploys | push to `main` | no local CLI required |
+| Web app + API | Worker (assets + routes) | serverless |
+| Analysis DSP | `AnalysisService` container | image in the Cloudflare registry, `standard-1` instance |
+| Queue, DB, KV, R2 | Queues / D1 / KV / R2 | serverless |
+| Image build | anywhere (Python, no Docker) | `tools/publish-image.ps1` |
+| Deploys | any machine, or push to `main` with Workers Builds | no Docker, no workstation runtime |
 
 The polling worker (`npm run analysis:worker`) stays in the repo as a development tool and a
 fallback runtime, but production does not need it: with `ANALYSIS_DISPATCH=queue` and
@@ -218,7 +240,7 @@ npx wrangler deploy --dry-run --config wrangler.containers.toml --outdir $env:TE
 | `409 That email is already registered` | the smoke test reuses `--email`; pass a new one |
 | PowerShell helper parse errors | keep every `.ps1` pure ASCII: Windows PowerShell 5.1 reads files as ANSI and an em dash swallows the closing quote |
 | `wrangler deploy` "fetch failed" | transient; re-run it (bindings and secrets are unaffected) |
-| `wrangler deploy --config wrangler.containers.toml` fails: "The Docker CLI is needed to build the configured image" | Docker Desktop is not installed or its engine is not running — use path C2 (Workers Builds), or add `--containers-rollout=none` for a Worker-only deploy |
+| `wrangler deploy --config wrangler.containers.toml` fails: "The Docker CLI is needed to build the configured image" | `image` in that config points at a Dockerfile. Either give Docker to the machine that deploys, or publish the image first (`tools/publish-image.ps1`) and reference it as `registry.cloudflare.com/...` — registry references need no Docker |
 | Docker Desktop installs but the engine will not start | firmware virtualization is off: `systeminfo` must report `Virtualization Enabled In Firmware: Yes` (a remote VM needs nested virtualization from the host) |
 
 ## 8. Known gaps (deliberate, next steps)
