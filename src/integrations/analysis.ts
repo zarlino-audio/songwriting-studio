@@ -272,6 +272,32 @@ export function normalizeProfile(raw: unknown, fallbackDuration = 0): { profile:
 
 export class AnalysisUnavailableError extends Error {}
 
+/**
+ * Size of the container pool. Must be <= `max_instances` in wrangler.containers.toml.
+ *
+ * Sharding per beat (one instance per beat id) looks appealing but creates an
+ * unbounded number of instances: they linger for `sleepAfter` after each beat, so a
+ * handful of uploads exhausts the account's cap and every later analysis fails with
+ * "Maximum number of running container instances exceeded". Hashing into a fixed
+ * pool keeps parallelism without ever asking for more instances than exist.
+ */
+const ANALYSIS_POOL_SIZE = 2;
+
+function analysisSlot(env: Env, key: string) {
+  if (!env.ANALYSIS) {
+    throw new AnalysisUnavailableError(
+      "ANALYSIS_MODE=container but no ANALYSIS binding — deploy with wrangler.containers.toml",
+    );
+  }
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const index = (hash >>> 0) % ANALYSIS_POOL_SIZE;
+  return env.ANALYSIS.get(env.ANALYSIS.idFromName(`analysis-slot-${index}`));
+}
+
 export async function requestAnalysis(env: Env, request: AnalysisRequest): Promise<AnalysisResult> {
   const mode = analysisMode(env);
 
@@ -292,14 +318,7 @@ export async function requestAnalysis(env: Env, request: AnalysisRequest): Promi
 
   let response: Response;
   if (mode === "container") {
-    if (!env.ANALYSIS) {
-      throw new AnalysisUnavailableError(
-        "ANALYSIS_MODE=container but no ANALYSIS binding — deploy with wrangler.containers.toml",
-      );
-    }
-    // One container per beat: `max_instances` then actually buys parallelism, and a
-    // crashed analysis cannot take another beat's request down with it.
-    const stub = env.ANALYSIS.get(env.ANALYSIS.idFromName(`beat:${request.beatId}`));
+    const stub = analysisSlot(env, request.beatId);
     response = await stub.fetch("http://analysis/analyze", { method: "POST", headers, body: payload });
   } else {
     const base = (env.ANALYSIS_URL || "").replace(/\/$/, "");
@@ -335,9 +354,8 @@ export async function analysisHealth(env: Env): Promise<AnalysisHealth> {
   }
   if (mode === "stub") return { mode, ok: true, detail: "stub profile generator (no real DSP)" };
   if (mode === "container") {
-    if (!env.ANALYSIS) return { mode, ok: false, detail: "container binding missing" };
     try {
-      const stub = env.ANALYSIS.get(env.ANALYSIS.idFromName("analysis"));
+      const stub = analysisSlot(env, "health-check");
       const res = await stub.fetch("http://analysis/health");
       return { mode, ok: res.ok, detail: res.ok ? "container responding" : `container HTTP ${res.status}` };
     } catch (error) {

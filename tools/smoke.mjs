@@ -2,15 +2,20 @@
 /**
  * Live end-to-end smoke test.
  *
- *   node tools/smoke.mjs --url https://<worker>.workers.dev [--wait 120]
+ *   node tools/smoke.mjs --url https://<worker>.workers.dev [--wait 120] [--audio track.mp3]
  *
  * Verifies the whole vertical slice against a real deployment:
  *   health -> register/login -> beat upload -> analysis job -> (wait for the
- *   analysis worker) -> beat profile -> song -> autosave -> version -> AI call
+ *   analysis runtime) -> beat profile -> song -> autosave -> version -> AI call
  *   -> export -> observability
  *
- * It generates its own click-track WAV in memory, so no audio assets are needed.
+ * Without --audio it generates its own click-track WAV in memory, so no audio
+ * assets are needed. Pass --audio <file> to push a real track instead (how the
+ * container runtime is exercised with track-length audio).
  */
+
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -26,7 +31,6 @@ const PASSWORD = args.get("password") ?? `Smoke-${Math.random().toString(36).sli
 
 let token = null;
 const results = [];
-
 function record(name, ok, detail = "") {
   results.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
@@ -116,10 +120,25 @@ async function main() {
   record("session resolves", me.ok && me.payload?.authenticated === true, me.payload?.user?.email ?? "");
 
   // 3 — upload a beat (proxy path is used until R2 S3 keys are configured)
-  const wav = makeClickTrack();
+  //     `--audio <file>` uploads a real track instead of the built-in click track,
+  //     which is how the container path is exercised with track-length audio.
+  const audioPath = args.get("audio");
+  let wav;
+  let filename = "smoke-click-104.wav";
+  let mimeType = "audio/wav";
+  let title = "Smoke click 104";
+  if (audioPath) {
+    wav = readFileSync(audioPath);
+    filename = basename(audioPath);
+    mimeType = filename.toLowerCase().endsWith(".mp3") ? "audio/mpeg" : mimeType;
+    title = `Smoke ${filename}`;
+    console.log(`      using ${filename} (${(wav.length / 1e6).toFixed(1)} MB)`);
+  } else {
+    wav = makeClickTrack();
+  }
   const upload = await api("/api/beats/upload", {
     method: "POST",
-    body: { filename: "smoke-click-104.wav", mimeType: "audio/wav", sizeBytes: wav.length, title: "Smoke click 104" },
+    body: { filename, mimeType, sizeBytes: wav.length, title },
   });
   record("upload session created", upload.ok, `mode ${upload.payload?.upload?.mode ?? "?"}`);
   if (!upload.ok) return finish();
@@ -128,7 +147,7 @@ async function main() {
   const mode = upload.payload.upload.mode;
   const putResponse = mode === "direct"
     ? await fetch(upload.payload.upload.url, { method: "PUT", body: wav })
-    : await api(upload.payload.upload.url, { method: "PUT", body: wav, raw: true, headers: { "content-type": "audio/wav" } });
+    : await api(upload.payload.upload.url, { method: "PUT", body: wav, raw: true, headers: { "content-type": mimeType } });
   const putOk = mode === "direct" ? putResponse.ok : putResponse.ok;
   record("audio stored", Boolean(putOk), `mode ${mode}`);
 
@@ -153,7 +172,16 @@ async function main() {
   record("beat analysed", status === "READY", `status ${status ?? "?"}${detail?.payload?.beat?.error ? ` — ${detail.payload.beat.error}` : ""}`);
   const profile = detail?.payload?.profile ?? null;
   if (profile) {
-    record("tempo detected ~104 BPM", Math.abs(profile.bpm - 104) <= 6, `${profile.bpm} BPM (conf ${profile.bpm_confidence})`);
+    // The built-in click track is 104 BPM; a file passed with --audio has its own
+    // tempo, so the check only asserts a plausible range in that case.
+    const tempoOk = audioPath
+      ? profile.bpm >= 50 && profile.bpm <= 200
+      : Math.abs(profile.bpm - 104) <= 6;
+    record(
+      audioPath ? "tempo detected (plausible range)" : "tempo detected ~104 BPM",
+      tempoOk,
+      `${profile.bpm} BPM (conf ${profile.bpm_confidence})`,
+    );
     record("key detected", typeof profile.key === "string" && profile.key !== "unknown", profile.key);
     record(
       "profile is complete",

@@ -72,7 +72,12 @@ class_name = "SongSessionDO"
 [[containers]]
 class_name = "AnalysisService"
 image = "registry.cloudflare.com/ae604b602fdbcb1b48b41e975c6dbd19/zarlino-songwriting-analysis:0.4.0"
-max_instances = 2
+# Keep this >= ANALYSIS_POOL_SIZE in src/integrations/analysis.ts: the Worker hashes
+# each beat into a fixed pool of instance names, and asking for more distinct
+# instances than max_instances lets running fails with "Maximum number of running
+# container instances exceeded". The headroom above the pool size absorbs instances
+# that are still shutting down (they linger for `sleepAfter` after their last request).
+max_instances = 4
 instance_type = "standard-1"
 name = "zarlino-songwriting-analysis"
 
