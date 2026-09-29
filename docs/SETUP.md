@@ -108,17 +108,49 @@ protected by the shared secret.
 
 ### C. Cloudflare Container (what the product is designed for)
 
-Requires **Docker running locally** (wrangler builds and pushes the image) and a Workers Paid plan.
+Requires a Workers Paid plan, plus **one** of these two build paths:
+
+**C1 — build locally (Docker Desktop running):**
 
 ```powershell
+docker info                    # must succeed before deploying
 npm run deploy:containers      # wrangler deploy --config wrangler.containers.toml
 wrangler containers list       # check status; first provisioning takes a few minutes
 ```
 
+Wrangler builds the image from `analysis/Dockerfile` and pushes it, so Docker must be running on the
+machine that deploys (the image builds for `linux/amd64`). Windows needs hardware virtualization
+enabled in firmware for the Docker engine to start — check `systeminfo` for
+`Virtualization Enabled In Firmware: Yes`.
+
+**C2 — build in the cloud (no Docker anywhere):**
+
+Connect the GitHub repo to the Worker once in the dashboard (**Workers & Pages → the Worker →
+Settings → Builds → Connect**), and set the **Deploy command** to `npm run deploy:containers`.
+Workers Builds runs Dockerfile builds in its own environment, so pushes to `main` publish the image
+and roll out the container. Keep the production branch deploy as a full `wrangler deploy` —
+`wrangler versions upload` does not publish images.
+
+**Worker-only deploy without Docker** (useful when the image is not ready yet):
+
+```powershell
+npx wrangler deploy --config wrangler.containers.toml --containers-rollout=none
+```
+
+That publishes Worker code only; the container keeps running its previous image.
+
 `wrangler.containers.toml` binds `AnalysisService` (`instance_type = "standard-1"`, `sleepAfter`
-10 min) and sets `ANALYSIS_MODE=container`, `ANALYSIS_DISPATCH=queue`. The container uses PyAV
-(FFmpeg wheels) so it needs no system FFmpeg; locally the same code uses the `imageio-ffmpeg`
-binary because PyAV has no Windows/Python 3.11 wheel.
+10 min) and sets `ANALYSIS_MODE=container`, `ANALYSIS_DISPATCH=queue`. Two fields are easy to get
+wrong: `image` must be the **Dockerfile path** (`./analysis/Dockerfile`, not the directory) and
+`main` must be **`src/container-entry.ts`** — the only entrypoint that exports the container class.
+The container uses PyAV (FFmpeg wheels) so it needs no system FFmpeg; locally the same code uses the
+`imageio-ffmpeg` binary because PyAV has no Windows/Python 3.11 wheel.
+
+Validate the config without deploying:
+
+```powershell
+npx wrangler deploy --dry-run --config wrangler.containers.toml --outdir $env:TEMP\swsdry
+```
 
 ## 6. Operations
 
@@ -143,6 +175,8 @@ binary because PyAV has no Windows/Python 3.11 wheel.
 | `409 That email is already registered` | the smoke test reuses `--email`; pass a new one |
 | PowerShell helper parse errors | keep every `.ps1` pure ASCII: Windows PowerShell 5.1 reads files as ANSI and an em dash swallows the closing quote |
 | `wrangler deploy` "fetch failed" | transient; re-run it (bindings and secrets are unaffected) |
+| `wrangler deploy --config wrangler.containers.toml` fails: "The Docker CLI is needed to build the configured image" | Docker Desktop is not installed or its engine is not running — use path C2 (Workers Builds), or add `--containers-rollout=none` for a Worker-only deploy |
+| Docker Desktop installs but the engine will not start | firmware virtualization is off: `systeminfo` must report `Virtualization Enabled In Firmware: Yes` (a remote VM needs nested virtualization from the host) |
 
 ## 8. Known gaps (deliberate, next steps)
 
@@ -152,5 +186,6 @@ binary because PyAV has no Windows/Python 3.11 wheel.
 - **Voice notes / ASR / humming analysis** are v1.5–v2 per the spec and are not built.
 - **Vectorize** semantic memory is not in use yet; the artist profile + judged feedback are the
   retrieval sources today.
-- The container image has not been built on this machine (Docker is not installed) — the Python
-  engine it will run is the same one verified by the DSP tests and the live smoke test.
+- Container image publishing needs either local Docker (engine requires firmware virtualization) or
+the Workers Builds connection (C2). Until one of those is in place the analysis runtime runs as the
+polling worker — the same Python engine, verified by the DSP tests and the live smoke test.
