@@ -65,12 +65,17 @@ The Worker calls AI Gateway first and falls back to the provider directly if the
 request (recorded per request as `meta.route`). To make the gateway path work, create a Cloudflare
 API token with **AI Gateway: Run** and set `AI_GATEWAY_TOKEN`. Requests then appear in the gateway's
 logs/analytics with caching, while `DEEPSEEK_API_KEY` remains the BYOK key.
-
 ## 4. Deploy
+
+Two modes. **Cloud-only is the target:** after step 4B is set up, nothing in production
+(analysis included) runs on a workstation, and deploys happen on push.
+
+### 4A. From a machine (dev / break-glass)
 
 ```powershell
 npm run db:remote      # apply schema changes to production D1
 npm run deploy         # build web/ and deploy the Worker
+npm run deploy:containers   # ...with the Cloudflare Container analysis runtime (needs Docker)
 ```
 
 Live checks:
@@ -79,6 +84,44 @@ Live checks:
 powershell -ExecutionPolicy Bypass -File ./tools/smoke.ps1        # 24 end-to-end checks
 Invoke-RestMethod https://zarlino-songwriting-studio.zarlino001.workers.dev/api/health
 ```
+
+### 4B. Cloud-only (Workers Builds — the recommended setup)
+
+One-time connection, then every push to `main` builds the image, deploys the Worker and rolls out
+container instances. No Docker, no secrets, no workstation involved.
+
+1. **Workers & Pages → zarlino-songwriting-studio → Settings → Builds → Connect**
+2. Authorise GitHub and pick `zarlino-audio/songwriting-studio`, production branch `main`
+3. Set **Deploy command** to `npm run deploy:containers` (the default build command `npm ci` is
+   correct — `prebuild:web` installs `web/`'s dependencies)
+
+Then: `git push` → build → live. Watch it under **Deployments → View build history**; the container
+shows up under **Workers & Pages → Containers** with status, metrics and logs.
+
+Verify from anywhere (no workstation):
+
+```powershell
+npx wrangler containers list                     # status per container application
+npx wrangler tail --config wrangler.containers.toml   # live container/Worker logs
+node tools/smoke.mjs --url https://zarlino-songwriting-studio.zarlino001.workers.dev --wait 120
+```
+
+**What is cloud-only after this:**
+
+| Piece | Runs where | Why it is independent |
+| --- | --- | --- |
+| Web app + API | Worker (assets + routes) | deployed by Workers Builds |
+| Analysis DSP | `AnalysisService` container | image built in the CF build environment, `standard-1` instance |
+| Queue, DB, KV, R2 | D1 / KV / R2 / Queues | already serverless |
+| Image build | Cloudflare build environment | Docker runs there, not here |
+| Deploys | push to `main` | no local CLI required |
+
+The polling worker (`npm run analysis:worker`) stays in the repo as a development tool and a
+fallback runtime, but production does not need it: with `ANALYSIS_DISPATCH=queue` and
+`ANALYSIS_MODE=container`, jobs go R2 → Queue → container → D1.
+
+Rollback from anywhere: `npx wrangler rollback` (previous Worker version) or
+`npx wrangler deploy --config wrangler.containers.toml --containers-rollout=none` (Worker-only).
 
 ## 5. Running real analysis
 

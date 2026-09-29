@@ -7,6 +7,13 @@ import { nowIso } from "../util/ids";
 import type { BeatProfile } from "../types";
 
 /**
+ * Inline audio is a fallback for accounts without R2 S3 keys. A Worker request
+ * body is capped well below the 500 MB upload ceiling, so anything large enough to
+ * be a full track needs the signed-URL path instead — the error says so.
+ */
+const MAX_INLINE_AUDIO_BYTES = 40 * 1024 * 1024;
+
+/**
  * Analysis pipeline (spec §5 / §35): R2 object -> analysis runtime -> beat profile.
  *
  * `storeAnalysisResult` is the single place a profile is committed, shared by the
@@ -62,9 +69,36 @@ export async function runAnalysisJob(
     await store.markJobRunning(job.jobId);
     await store.recordEvent("analysis_started", job.userId, { beatId: job.beatId, jobId: job.jobId });
 
+    // Preferred path: a short-lived signed URL the runtime fetches itself. Without
+    // R2 S3 keys there is no signature to give, so read the object through the
+    // binding and hand the bytes over — the beat is a few MB, and this keeps the
+    // pipeline working on an account that has R2 enabled but no API token yet.
     const audioUrl = await signedAudioUrl(env, job.r2Key, 3600);
+    let audioBytes: ArrayBuffer | undefined;
+    let mimeType: string | undefined;
+    if (!audioUrl) {
+      const beats = env.BEATS;
+      if (!beats) {
+        throw new AnalysisUnavailableError(
+          "No signed audio URL and no R2 binding (BEATS) — enable R2 or set R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY.",
+        );
+      }
+      const head = await beats.head(job.r2Key);
+      if (!head) throw new Error(`Audio object is missing for ${job.r2Key}`);
+      if (head.size > MAX_INLINE_AUDIO_BYTES) {
+        throw new AnalysisUnavailableError(
+          `Beat is ${Math.round(head.size / (1024 * 1024))} MB and R2 signing keys are not set — ` +
+            "set R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY so the runtime can fetch the audio directly.",
+        );
+      }
+      const object = await beats.get(job.r2Key);
+      if (!object) throw new Error(`Audio object is missing for ${job.r2Key}`);
+      audioBytes = await object.arrayBuffer();
+      mimeType = object.httpMetadata?.contentType ?? "application/octet-stream";
+    }
+
     const started = Date.now();
-    const result = await requestAnalysis(env, { beatId: job.beatId, audioUrl });
+    const result = await requestAnalysis(env, { beatId: job.beatId, audioUrl, audioBytes, mimeType });
     const durationMs = Date.now() - started;
 
     await storeAnalysisResult(env, store, job, result.profile, result.engine, result.engineVersion);

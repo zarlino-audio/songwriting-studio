@@ -280,11 +280,14 @@ export async function requestAnalysis(env: Env, request: AnalysisRequest): Promi
     return { profile, engine: "stub", engineVersion: "0" };
   }
 
-  const payload = JSON.stringify({
-    beat_id: request.beatId,
-    audio_url: request.audioUrl,
-  });
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const raw = request.audioBytes && request.audioBytes.byteLength > 0 ? request.audioBytes : null;
+  // Prefer bytes when we have them: the container cannot hold R2 credentials, and
+  // signed URLs need R2 S3 keys that may not exist yet. Bytes keep the runtime
+  // working on a bare account (spec: no dependency on the workstation).
+  const payload: BodyInit = raw ?? JSON.stringify({ beat_id: request.beatId, audio_url: request.audioUrl });
+  const headers: Record<string, string> = raw
+    ? { "content-type": request.mimeType || "application/octet-stream", "x-beat-id": request.beatId }
+    : { "content-type": "application/json" };
   if (env.ANALYSIS_SHARED_SECRET) headers["x-analysis-key"] = env.ANALYSIS_SHARED_SECRET;
 
   let response: Response;
@@ -294,7 +297,9 @@ export async function requestAnalysis(env: Env, request: AnalysisRequest): Promi
         "ANALYSIS_MODE=container but no ANALYSIS binding — deploy with wrangler.containers.toml",
       );
     }
-    const stub = env.ANALYSIS.get(env.ANALYSIS.idFromName("analysis"));
+    // One container per beat: `max_instances` then actually buys parallelism, and a
+    // crashed analysis cannot take another beat's request down with it.
+    const stub = env.ANALYSIS.get(env.ANALYSIS.idFromName(`beat:${request.beatId}`));
     response = await stub.fetch("http://analysis/analyze", { method: "POST", headers, body: payload });
   } else {
     const base = (env.ANALYSIS_URL || "").replace(/\/$/, "");
